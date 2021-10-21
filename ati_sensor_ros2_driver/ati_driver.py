@@ -2,10 +2,10 @@
 
 import rclpy
 from rclpy.node import Node
-from rpi_ati_net_ft import NET_FT
+from .rpi_ati_net_ft import NET_FT
 import argparse
 from geometry_msgs.msg import WrenchStamped
-from std_srvs.srv import Trigger, TriggerResponse
+from std_srvs.srv import Trigger
 
 class ATIDriver(Node):
     def __init__(self, host):
@@ -18,28 +18,35 @@ class ATIDriver(Node):
         print(self.ati_obj.try_read_ft_http())
 
         # service server
-        self.tare_srv = self.create_service('set_ati_tare',Trigger,self.set_tare)
-        self.clr_tare_srv = self.create_service('clear_ati_tare',Trigger,self.set_tare)
+        self.tare_srv = self.create_service(Trigger,'set_ati_tare',self.set_tare)
+        self.clr_tare_srv = self.create_service(Trigger,'clear_ati_tare',self.clear_tare)
 
         # publisher
-        self.ft_pub = self.create_publisher("ati_ft",WrenchStamped,1)
+        self.ft_pub = self.create_publisher(WrenchStamped,"ati_ft",1)
+
+        self.ati_obj.start_streaming()
+
+        # timer
+        self.rate = 1e-3
+        self.create_timer(self.rate, self.get_ft)
     
     def get_ft(self):
 
         res, ft, status = self.ati_obj.try_read_ft_streaming(.1)
         fstamp = self.get_clock().now().to_msg()
 
-        w = WrenchStamped()
-        w.header.stamp = fstamp
-        w.header.frame_id = 'ati_frame'
-        w.wrench.torque.x = ft[0]
-        w.wrench.torque.y = ft[1]
-        w.wrench.torque.z = ft[2]
-        w.wrench.force.x = ft[3]
-        w.wrench.force.y = ft[4]
-        w.wrench.force.z = ft[5]
+        if ft is not None:
+            w = WrenchStamped()
+            w.header.stamp = fstamp
+            w.header.frame_id = 'ati_frame'
+            w.wrench.torque.x = ft[0]
+            w.wrench.torque.y = ft[1]
+            w.wrench.torque.z = ft[2]
+            w.wrench.force.x = ft[3]
+            w.wrench.force.y = ft[4]
+            w.wrench.force.z = ft[5]
 
-        self.ft_pub.publish(w)
+            self.ft_pub.publish(w)
 
     def set_tare(self, req, response):
         
@@ -69,10 +76,7 @@ def main():
     rclpy.init()
     ati_driver_obj = ATIDriver(args.sensor_ip)
 
-    while rclpy.ok():
-
-        ati_driver_obj.get_ft()
-        rclpy.spin_once(ati_driver_obj)
+    rclpy.spin(ati_driver_obj)
 
 if __name__ == '__main__':
     main()
